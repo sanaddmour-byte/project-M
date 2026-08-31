@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>SiteVantage</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>armv7</string>
+	</array>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+
+	<!-- Only camera, location, and speech/microphone permissions are
+	     declared. There is no NSPhotoLibraryUsageDescription anywhere in
+	     this build: evidence capture never touches the Photos library at
+	     all, by design (spec §4 screen 4, §6). -->
+	<key>NSCameraUsageDescription</key>
+	<string>SiteVantage uses the camera to capture evidence photos directly for field tickets. Photos are never taken from your photo library.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>SiteVantage tags evidence photos and tickets with your location to strengthen the evidentiary record for billing disputes. If location isn't available, you can drop a manual pin instead.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SiteVantage records your voice on-device to transcribe the scope of extra work. Audio never leaves this device and is never sent to any server.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>SiteVantage transcribes your voice on-device (in Airplane Mode too) to pre-fill the ticket scope and line items. No audio or transcript is sent to Apple or any cloud service.</string>
+</dict>
+</plist>
