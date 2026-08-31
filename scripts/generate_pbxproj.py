@@ -1,24 +1,33 @@
 #!/usr/bin/env python3
 """Generates SiteVantage.xcodeproj/project.pbxproj by walking the SiteVantage/
-source tree. Written as a script (rather than hand-authored) because a
-~40-file Xcode project has hundreds of interlocking UUID references and a
-generator is far less error-prone than typing them by hand -- especially
-since this environment has no Xcode to open/repair the project in.
+and SiteVantageTests/ source trees. Written as a script (rather than
+hand-authored) because a project this size has hundreds of interlocking
+UUID references and a generator is far less error-prone than typing them by
+hand -- especially since this environment has no Xcode to open/repair the
+project in.
 
 Classic (non-synchronized-group) PBXGroup/PBXFileReference/PBXBuildFile
 structure, objectVersion 56 (Xcode 14/15 era format; modern Xcode versions
 open and build older-format projects without issue).
+
+Produces two targets:
+  - SiteVantage (app)
+  - SiteVantageTests (XCTest unit test bundle, hosted by the app target,
+    depends on it, and is added to the shared scheme's TestAction)
 """
 
 import hashlib
 import os
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SOURCE_ROOT = os.path.join(REPO_ROOT, "SiteVantage")
+APP_SOURCE_ROOT = os.path.join(REPO_ROOT, "SiteVantage")
+TESTS_SOURCE_ROOT = os.path.join(REPO_ROOT, "SiteVantageTests")
 PROJECT_DIR = os.path.join(REPO_ROOT, "SiteVantage.xcodeproj")
 
 PRODUCT_NAME = "SiteVantage"
+TESTS_PRODUCT_NAME = "SiteVantageTests"
 BUNDLE_ID = "com.sitevantage.SiteVantage"
+TESTS_BUNDLE_ID = "com.sitevantage.SiteVantageTests"
 DEPLOYMENT_TARGET = "17.0"
 
 _counter = [0]
@@ -39,21 +48,21 @@ def new_id(seed):
 
 
 class Node:
-    """A directory node in the source tree, becoming a PBXGroup."""
+    """A directory node in a source tree, becoming a PBXGroup."""
 
     def __init__(self, name, rel_path):
         self.name = name
-        self.rel_path = rel_path  # relative to SOURCE_ROOT
+        self.rel_path = rel_path  # relative to that tree's source root
         self.children = {}  # name -> Node
-        self.files = []  # (name, rel_path_from_source_root)
-        self.group_id = new_id(f"group:{rel_path}")
+        self.files = []  # filenames directly in this directory
+        self.group_id = new_id(f"group:{name}:{rel_path}")
 
 
-def build_tree():
-    root = Node("SiteVantage", "")
-    for dirpath, dirnames, filenames in os.walk(SOURCE_ROOT):
+def build_tree(source_root, root_name):
+    root = Node(root_name, "")
+    for dirpath, dirnames, filenames in os.walk(source_root):
         dirnames.sort()
-        rel_dir = os.path.relpath(dirpath, SOURCE_ROOT)
+        rel_dir = os.path.relpath(dirpath, source_root)
         rel_dir = "" if rel_dir == "." else rel_dir
 
         # Assets.xcassets is represented as a single opaque file reference,
@@ -64,7 +73,9 @@ def build_tree():
         node = root
         if rel_dir:
             for part in rel_dir.split(os.sep):
-                node = node.children.setdefault(part, Node(part, os.path.join(node.rel_path, part) if node.rel_path else part))
+                node = node.children.setdefault(
+                    part, Node(part, os.path.join(node.rel_path, part) if node.rel_path else part)
+                )
 
         for filename in sorted(filenames):
             if filename.startswith("."):
@@ -91,47 +102,70 @@ def file_type_for(name):
     return FILE_TYPE_BY_EXT.get(ext, "text")
 
 
-def main():
-    root = build_tree()
+class SourceTreeResult:
+    def __init__(self):
+        self.file_refs = []  # (id, name, rel_path, file_type)
+        self.build_files_sources = []  # (build_file_id, file_id, filename)
+        self.build_files_resources = []
 
-    file_refs = []  # (id, name, path_from_source_root, file_type)
-    build_files_sources = []  # (build_file_id, file_ref_id, comment)
-    build_files_resources = []
+
+def collect(root):
+    result = SourceTreeResult()
 
     def walk(node):
         for filename in node.files:
             rel = os.path.join(node.rel_path, filename) if node.rel_path else filename
-            file_id = new_id(f"file:{rel}")
+            file_id = new_id(f"file:{root.name}:{rel}")
             ftype = file_type_for(filename)
-            file_refs.append((file_id, filename, rel, ftype))
+            result.file_refs.append((file_id, filename, rel, ftype))
             if filename.endswith(".swift"):
-                bf_id = new_id(f"buildfile:{rel}")
-                build_files_sources.append((bf_id, file_id, filename))
+                bf_id = new_id(f"buildfile:{root.name}:{rel}")
+                result.build_files_sources.append((bf_id, file_id, filename))
             elif filename == "Assets.xcassets":
-                bf_id = new_id(f"buildfile:{rel}")
-                build_files_resources.append((bf_id, file_id, filename))
+                bf_id = new_id(f"buildfile:{root.name}:{rel}")
+                result.build_files_resources.append((bf_id, file_id, filename))
             # Info.plist: file reference only, no build phase membership.
         for child_name in sorted(node.children.keys()):
             walk(node.children[child_name])
 
     walk(root)
+    return result
 
-    product_ref_id = new_id("product:SiteVantage.app")
+
+def main():
+    app_root = build_tree(APP_SOURCE_ROOT, "SiteVantage")
+    app = collect(app_root)
+
+    tests_root = build_tree(TESTS_SOURCE_ROOT, "SiteVantageTests")
+    tests = collect(tests_root)
+
+    app_product_ref_id = new_id("product:SiteVantage.app")
+    tests_product_ref_id = new_id("product:SiteVantageTests.xctest")
     project_id = new_id("project")
-    target_id = new_id("target:SiteVantage")
+    app_target_id = new_id("target:SiteVantage")
+    tests_target_id = new_id("target:SiteVantageTests")
     main_group_id = new_id("group:main")
     products_group_id = new_id("group:products")
 
-    sources_phase_id = new_id("phase:sources")
-    resources_phase_id = new_id("phase:resources")
-    frameworks_phase_id = new_id("phase:frameworks")
+    app_sources_phase_id = new_id("phase:app:sources")
+    app_resources_phase_id = new_id("phase:app:resources")
+    app_frameworks_phase_id = new_id("phase:app:frameworks")
+    tests_sources_phase_id = new_id("phase:tests:sources")
+    tests_resources_phase_id = new_id("phase:tests:resources")
+    tests_frameworks_phase_id = new_id("phase:tests:frameworks")
 
     project_debug_config_id = new_id("config:project:debug")
     project_release_config_id = new_id("config:project:release")
-    target_debug_config_id = new_id("config:target:debug")
-    target_release_config_id = new_id("config:target:release")
+    app_debug_config_id = new_id("config:app:debug")
+    app_release_config_id = new_id("config:app:release")
+    tests_debug_config_id = new_id("config:tests:debug")
+    tests_release_config_id = new_id("config:tests:release")
     project_config_list_id = new_id("configlist:project")
-    target_config_list_id = new_id("configlist:target")
+    app_config_list_id = new_id("configlist:app")
+    tests_config_list_id = new_id("configlist:tests")
+
+    target_dependency_id = new_id("targetdependency:tests-on-app")
+    container_proxy_id = new_id("containerproxy:tests-on-app")
 
     lines = []
 
@@ -149,43 +183,63 @@ def main():
 
     # PBXBuildFile
     emit("/* Begin PBXBuildFile section */")
-    for bf_id, file_id, filename in build_files_sources:
+    for bf_id, file_id, filename in app.build_files_sources:
         emit(f"\t\t{bf_id} /* {filename} in Sources */ = {{isa = PBXBuildFile; fileRef = {file_id} /* {filename} */; }};")
-    for bf_id, file_id, filename in build_files_resources:
+    for bf_id, file_id, filename in app.build_files_resources:
+        emit(f"\t\t{bf_id} /* {filename} in Resources */ = {{isa = PBXBuildFile; fileRef = {file_id} /* {filename} */; }};")
+    for bf_id, file_id, filename in tests.build_files_sources:
+        emit(f"\t\t{bf_id} /* {filename} in Sources */ = {{isa = PBXBuildFile; fileRef = {file_id} /* {filename} */; }};")
+    for bf_id, file_id, filename in tests.build_files_resources:
         emit(f"\t\t{bf_id} /* {filename} in Resources */ = {{isa = PBXBuildFile; fileRef = {file_id} /* {filename} */; }};")
     emit("/* End PBXBuildFile section */")
     emit()
 
+    # PBXContainerItemProxy
+    emit("/* Begin PBXContainerItemProxy section */")
+    emit(f"\t\t{container_proxy_id} /* PBXContainerItemProxy */ = {{")
+    emit("\t\t\tisa = PBXContainerItemProxy;")
+    emit(f"\t\t\tcontainerPortal = {project_id} /* Project object */;")
+    emit("\t\t\tproxyType = 1;")
+    emit(f"\t\t\tremoteGlobalIDString = {app_target_id};")
+    emit(f"\t\t\tremoteInfo = {PRODUCT_NAME};")
+    emit("\t\t};")
+    emit("/* End PBXContainerItemProxy section */")
+    emit()
+
     # PBXFileReference
     emit("/* Begin PBXFileReference section */")
-    emit(f"\t\t{product_ref_id} /* {PRODUCT_NAME}.app */ = {{isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = {PRODUCT_NAME}.app; sourceTree = BUILT_PRODUCTS_DIR; }};")
-    for file_id, filename, rel, ftype in file_refs:
+    emit(f"\t\t{app_product_ref_id} /* {PRODUCT_NAME}.app */ = {{isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = {PRODUCT_NAME}.app; sourceTree = BUILT_PRODUCTS_DIR; }};")
+    emit(f"\t\t{tests_product_ref_id} /* {TESTS_PRODUCT_NAME}.xctest */ = {{isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = {TESTS_PRODUCT_NAME}.xctest; sourceTree = BUILT_PRODUCTS_DIR; }};")
+    for file_id, filename, rel, ftype in app.file_refs:
+        emit(f"\t\t{file_id} /* {filename} */ = {{isa = PBXFileReference; lastKnownFileType = {ftype}; path = {filename}; sourceTree = \"<group>\"; }};")
+    for file_id, filename, rel, ftype in tests.file_refs:
         emit(f"\t\t{file_id} /* {filename} */ = {{isa = PBXFileReference; lastKnownFileType = {ftype}; path = {filename}; sourceTree = \"<group>\"; }};")
     emit("/* End PBXFileReference section */")
     emit()
 
     # PBXFrameworksBuildPhase
     emit("/* Begin PBXFrameworksBuildPhase section */")
-    emit(f"\t\t{frameworks_phase_id} /* Frameworks */ = {{")
-    emit("\t\t\tisa = PBXFrameworksBuildPhase;")
-    emit("\t\t\tbuildActionMask = 2147483647;")
-    emit("\t\t\tfiles = (")
-    emit("\t\t\t);")
-    emit("\t\t\trunOnlyForDeploymentPostprocessing = 0;")
-    emit("\t\t};")
+    for phase_id, label in [(app_frameworks_phase_id, PRODUCT_NAME), (tests_frameworks_phase_id, TESTS_PRODUCT_NAME)]:
+        emit(f"\t\t{phase_id} /* Frameworks */ = {{")
+        emit("\t\t\tisa = PBXFrameworksBuildPhase;")
+        emit("\t\t\tbuildActionMask = 2147483647;")
+        emit("\t\t\tfiles = (")
+        emit("\t\t\t);")
+        emit("\t\t\trunOnlyForDeploymentPostprocessing = 0;")
+        emit("\t\t};")
     emit("/* End PBXFrameworksBuildPhase section */")
     emit()
 
-    # PBXGroup section: build recursively
+    # PBXGroup section
     emit("/* Begin PBXGroup section */")
 
-    def emit_group(node, group_id):
-        emit(f"\t\t{group_id} = {{")
+    def emit_group(node, collected):
+        emit(f"\t\t{node.group_id} = {{")
         emit("\t\t\tisa = PBXGroup;")
         emit("\t\t\tchildren = (")
         for filename in node.files:
             rel = os.path.join(node.rel_path, filename) if node.rel_path else filename
-            match = next(f for f in file_refs if f[2] == rel)
+            match = next(f for f in collected.file_refs if f[2] == rel)
             emit(f"\t\t\t\t{match[0]} /* {filename} */,")
         for child_name in sorted(node.children.keys()):
             child = node.children[child_name]
@@ -193,23 +247,22 @@ def main():
         emit("\t\t\t);")
         # Every node's `path` matches its real folder name; nested paths
         # compose naturally since sourceTree is "<group>" (relative to the
-        # parent group's resolved directory) all the way down. The root
-        # "SiteVantage" node's path is the real SiteVantage/ folder at the
-        # repo root, alongside SiteVantage.xcodeproj.
+        # parent group's resolved directory) all the way down.
         emit(f"\t\t\tpath = {node.name};")
         emit("\t\t\tsourceTree = \"<group>\";")
         emit("\t\t};")
         for child_name in sorted(node.children.keys()):
-            emit_group(node.children[child_name], node.children[child_name].group_id)
+            emit_group(node.children[child_name], collected)
 
-    # Root "SiteVantage" group (mirrors the SiteVantage/ folder on disk).
-    emit_group(root, root.group_id)
+    emit_group(app_root, app)
+    emit_group(tests_root, tests)
 
     # Products group
     emit(f"\t\t{products_group_id} /* Products */ = {{")
     emit("\t\t\tisa = PBXGroup;")
     emit("\t\t\tchildren = (")
-    emit(f"\t\t\t\t{product_ref_id} /* {PRODUCT_NAME}.app */,")
+    emit(f"\t\t\t\t{app_product_ref_id} /* {PRODUCT_NAME}.app */,")
+    emit(f"\t\t\t\t{tests_product_ref_id} /* {TESTS_PRODUCT_NAME}.xctest */,")
     emit("\t\t\t);")
     emit("\t\t\tname = Products;")
     emit("\t\t\tsourceTree = \"<group>\";")
@@ -219,7 +272,8 @@ def main():
     emit(f"\t\t{main_group_id} = {{")
     emit("\t\t\tisa = PBXGroup;")
     emit("\t\t\tchildren = (")
-    emit(f"\t\t\t\t{root.group_id} /* {PRODUCT_NAME} */,")
+    emit(f"\t\t\t\t{app_root.group_id} /* {PRODUCT_NAME} */,")
+    emit(f"\t\t\t\t{tests_root.group_id} /* {TESTS_PRODUCT_NAME} */,")
     emit(f"\t\t\t\t{products_group_id} /* Products */,")
     emit("\t\t\t);")
     emit("\t\t\tsourceTree = \"<group>\";")
@@ -229,13 +283,13 @@ def main():
 
     # PBXNativeTarget
     emit("/* Begin PBXNativeTarget section */")
-    emit(f"\t\t{target_id} /* {PRODUCT_NAME} */ = {{")
+    emit(f"\t\t{app_target_id} /* {PRODUCT_NAME} */ = {{")
     emit("\t\t\tisa = PBXNativeTarget;")
-    emit(f"\t\t\tbuildConfigurationList = {target_config_list_id} /* Build configuration list for PBXNativeTarget \"{PRODUCT_NAME}\" */;")
+    emit(f"\t\t\tbuildConfigurationList = {app_config_list_id} /* Build configuration list for PBXNativeTarget \"{PRODUCT_NAME}\" */;")
     emit("\t\t\tbuildPhases = (")
-    emit(f"\t\t\t\t{sources_phase_id} /* Sources */,")
-    emit(f"\t\t\t\t{frameworks_phase_id} /* Frameworks */,")
-    emit(f"\t\t\t\t{resources_phase_id} /* Resources */,")
+    emit(f"\t\t\t\t{app_sources_phase_id} /* Sources */,")
+    emit(f"\t\t\t\t{app_frameworks_phase_id} /* Frameworks */,")
+    emit(f"\t\t\t\t{app_resources_phase_id} /* Resources */,")
     emit("\t\t\t);")
     emit("\t\t\tbuildRules = (")
     emit("\t\t\t);")
@@ -243,8 +297,27 @@ def main():
     emit("\t\t\t);")
     emit(f"\t\t\tname = {PRODUCT_NAME};")
     emit("\t\t\tproductName = " + PRODUCT_NAME + ";")
-    emit(f"\t\t\tproductReference = {product_ref_id} /* {PRODUCT_NAME}.app */;")
+    emit(f"\t\t\tproductReference = {app_product_ref_id} /* {PRODUCT_NAME}.app */;")
     emit("\t\t\tproductType = \"com.apple.product-type.application\";")
+    emit("\t\t};")
+
+    emit(f"\t\t{tests_target_id} /* {TESTS_PRODUCT_NAME} */ = {{")
+    emit("\t\t\tisa = PBXNativeTarget;")
+    emit(f"\t\t\tbuildConfigurationList = {tests_config_list_id} /* Build configuration list for PBXNativeTarget \"{TESTS_PRODUCT_NAME}\" */;")
+    emit("\t\t\tbuildPhases = (")
+    emit(f"\t\t\t\t{tests_sources_phase_id} /* Sources */,")
+    emit(f"\t\t\t\t{tests_frameworks_phase_id} /* Frameworks */,")
+    emit(f"\t\t\t\t{tests_resources_phase_id} /* Resources */,")
+    emit("\t\t\t);")
+    emit("\t\t\tbuildRules = (")
+    emit("\t\t\t);")
+    emit("\t\t\tdependencies = (")
+    emit(f"\t\t\t\t{target_dependency_id} /* PBXTargetDependency */,")
+    emit("\t\t\t);")
+    emit(f"\t\t\tname = {TESTS_PRODUCT_NAME};")
+    emit("\t\t\tproductName = " + TESTS_PRODUCT_NAME + ";")
+    emit(f"\t\t\tproductReference = {tests_product_ref_id} /* {TESTS_PRODUCT_NAME}.xctest */;")
+    emit("\t\t\tproductType = \"com.apple.product-type.bundle.unit-test\";")
     emit("\t\t};")
     emit("/* End PBXNativeTarget section */")
     emit()
@@ -258,8 +331,12 @@ def main():
     emit("\t\t\t\tLastSwiftUpdateCheck = 1510;")
     emit("\t\t\t\tLastUpgradeCheck = 1510;")
     emit("\t\t\t\tTargetAttributes = {")
-    emit(f"\t\t\t\t\t{target_id} = {{")
+    emit(f"\t\t\t\t\t{app_target_id} = {{")
     emit("\t\t\t\t\t\tCreatedOnToolsVersion = 15.1;")
+    emit("\t\t\t\t\t};")
+    emit(f"\t\t\t\t\t{tests_target_id} = {{")
+    emit("\t\t\t\t\t\tCreatedOnToolsVersion = 15.1;")
+    emit(f"\t\t\t\t\t\tTestTargetID = {app_target_id};")
     emit("\t\t\t\t\t};")
     emit("\t\t\t\t};")
     emit("\t\t\t};")
@@ -276,7 +353,8 @@ def main():
     emit("\t\t\tprojectDirPath = \"\";")
     emit("\t\t\tprojectRoot = \"\";")
     emit("\t\t\ttargets = (")
-    emit(f"\t\t\t\t{target_id} /* {PRODUCT_NAME} */,")
+    emit(f"\t\t\t\t{app_target_id} /* {PRODUCT_NAME} */,")
+    emit(f"\t\t\t\t{tests_target_id} /* {TESTS_PRODUCT_NAME} */,")
     emit("\t\t\t);")
     emit("\t\t};")
     emit("/* End PBXProject section */")
@@ -284,11 +362,20 @@ def main():
 
     # PBXResourcesBuildPhase
     emit("/* Begin PBXResourcesBuildPhase section */")
-    emit(f"\t\t{resources_phase_id} /* Resources */ = {{")
+    emit(f"\t\t{app_resources_phase_id} /* Resources */ = {{")
     emit("\t\t\tisa = PBXResourcesBuildPhase;")
     emit("\t\t\tbuildActionMask = 2147483647;")
     emit("\t\t\tfiles = (")
-    for bf_id, file_id, filename in build_files_resources:
+    for bf_id, file_id, filename in app.build_files_resources:
+        emit(f"\t\t\t\t{bf_id} /* {filename} in Resources */,")
+    emit("\t\t\t);")
+    emit("\t\t\trunOnlyForDeploymentPostprocessing = 0;")
+    emit("\t\t};")
+    emit(f"\t\t{tests_resources_phase_id} /* Resources */ = {{")
+    emit("\t\t\tisa = PBXResourcesBuildPhase;")
+    emit("\t\t\tbuildActionMask = 2147483647;")
+    emit("\t\t\tfiles = (")
+    for bf_id, file_id, filename in tests.build_files_resources:
         emit(f"\t\t\t\t{bf_id} /* {filename} in Resources */,")
     emit("\t\t\t);")
     emit("\t\t\trunOnlyForDeploymentPostprocessing = 0;")
@@ -298,16 +385,35 @@ def main():
 
     # PBXSourcesBuildPhase
     emit("/* Begin PBXSourcesBuildPhase section */")
-    emit(f"\t\t{sources_phase_id} /* Sources */ = {{")
+    emit(f"\t\t{app_sources_phase_id} /* Sources */ = {{")
     emit("\t\t\tisa = PBXSourcesBuildPhase;")
     emit("\t\t\tbuildActionMask = 2147483647;")
     emit("\t\t\tfiles = (")
-    for bf_id, file_id, filename in build_files_sources:
+    for bf_id, file_id, filename in app.build_files_sources:
+        emit(f"\t\t\t\t{bf_id} /* {filename} in Sources */,")
+    emit("\t\t\t);")
+    emit("\t\t\trunOnlyForDeploymentPostprocessing = 0;")
+    emit("\t\t};")
+    emit(f"\t\t{tests_sources_phase_id} /* Sources */ = {{")
+    emit("\t\t\tisa = PBXSourcesBuildPhase;")
+    emit("\t\t\tbuildActionMask = 2147483647;")
+    emit("\t\t\tfiles = (")
+    for bf_id, file_id, filename in tests.build_files_sources:
         emit(f"\t\t\t\t{bf_id} /* {filename} in Sources */,")
     emit("\t\t\t);")
     emit("\t\t\trunOnlyForDeploymentPostprocessing = 0;")
     emit("\t\t};")
     emit("/* End PBXSourcesBuildPhase section */")
+    emit()
+
+    # PBXTargetDependency
+    emit("/* Begin PBXTargetDependency section */")
+    emit(f"\t\t{target_dependency_id} /* PBXTargetDependency */ = {{")
+    emit("\t\t\tisa = PBXTargetDependency;")
+    emit(f"\t\t\ttarget = {app_target_id} /* {PRODUCT_NAME} */;")
+    emit(f"\t\t\ttargetProxy = {container_proxy_id} /* PBXContainerItemProxy */;")
+    emit("\t\t};")
+    emit("/* End PBXTargetDependency section */")
     emit()
 
     # XCBuildConfiguration
@@ -424,7 +530,7 @@ def main():
 				VALIDATE_PRODUCT = YES;
 	""" % {"deployment_target": DEPLOYMENT_TARGET}
 
-    target_common = """
+    app_target_common = """
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGNING_ALLOWED = NO;
@@ -448,6 +554,31 @@ def main():
 				TARGETED_DEVICE_FAMILY = "1,2";
 	""" % {"deployment_target": DEPLOYMENT_TARGET, "bundle_id": BUNDLE_ID}
 
+    tests_target_common = """
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = %(deployment_target)s;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = %(bundle_id)s;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/%(app_product_name)s.app/%(app_product_name)s";
+	""" % {
+        "deployment_target": DEPLOYMENT_TARGET,
+        "bundle_id": TESTS_BUNDLE_ID,
+        "app_product_name": PRODUCT_NAME,
+    }
+
     emit("/* Begin XCBuildConfiguration section */")
 
     emit(f"\t\t{project_debug_config_id} /* Debug */ = {{")
@@ -468,19 +599,37 @@ def main():
     emit("\t\t\tname = Release;")
     emit("\t\t};")
 
-    emit(f"\t\t{target_debug_config_id} /* Debug */ = {{")
+    emit(f"\t\t{app_debug_config_id} /* Debug */ = {{")
     emit("\t\t\tisa = XCBuildConfiguration;")
     emit("\t\t\tbuildSettings = {")
-    for line in target_common.strip("\n").split("\n"):
+    for line in app_target_common.strip("\n").split("\n"):
         emit(line)
     emit("\t\t\t};")
     emit("\t\t\tname = Debug;")
     emit("\t\t};")
 
-    emit(f"\t\t{target_release_config_id} /* Release */ = {{")
+    emit(f"\t\t{app_release_config_id} /* Release */ = {{")
     emit("\t\t\tisa = XCBuildConfiguration;")
     emit("\t\t\tbuildSettings = {")
-    for line in target_common.strip("\n").split("\n"):
+    for line in app_target_common.strip("\n").split("\n"):
+        emit(line)
+    emit("\t\t\t};")
+    emit("\t\t\tname = Release;")
+    emit("\t\t};")
+
+    emit(f"\t\t{tests_debug_config_id} /* Debug */ = {{")
+    emit("\t\t\tisa = XCBuildConfiguration;")
+    emit("\t\t\tbuildSettings = {")
+    for line in tests_target_common.strip("\n").split("\n"):
+        emit(line)
+    emit("\t\t\t};")
+    emit("\t\t\tname = Debug;")
+    emit("\t\t};")
+
+    emit(f"\t\t{tests_release_config_id} /* Release */ = {{")
+    emit("\t\t\tisa = XCBuildConfiguration;")
+    emit("\t\t\tbuildSettings = {")
+    for line in tests_target_common.strip("\n").split("\n"):
         emit(line)
     emit("\t\t\t};")
     emit("\t\t\tname = Release;")
@@ -501,11 +650,21 @@ def main():
     emit("\t\t\tdefaultConfigurationName = Release;")
     emit("\t\t};")
 
-    emit(f"\t\t{target_config_list_id} /* Build configuration list for PBXNativeTarget \"{PRODUCT_NAME}\" */ = {{")
+    emit(f"\t\t{app_config_list_id} /* Build configuration list for PBXNativeTarget \"{PRODUCT_NAME}\" */ = {{")
     emit("\t\t\tisa = XCConfigurationList;")
     emit("\t\t\tbuildConfigurations = (")
-    emit(f"\t\t\t\t{target_debug_config_id} /* Debug */,")
-    emit(f"\t\t\t\t{target_release_config_id} /* Release */,")
+    emit(f"\t\t\t\t{app_debug_config_id} /* Debug */,")
+    emit(f"\t\t\t\t{app_release_config_id} /* Release */,")
+    emit("\t\t\t);")
+    emit("\t\t\tdefaultConfigurationIsVisible = 0;")
+    emit("\t\t\tdefaultConfigurationName = Release;")
+    emit("\t\t};")
+
+    emit(f"\t\t{tests_config_list_id} /* Build configuration list for PBXNativeTarget \"{TESTS_PRODUCT_NAME}\" */ = {{")
+    emit("\t\t\tisa = XCConfigurationList;")
+    emit("\t\t\tbuildConfigurations = (")
+    emit(f"\t\t\t\t{tests_debug_config_id} /* Debug */,")
+    emit(f"\t\t\t\t{tests_release_config_id} /* Release */,")
     emit("\t\t\t);")
     emit("\t\t\tdefaultConfigurationIsVisible = 0;")
     emit("\t\t\tdefaultConfigurationName = Release;")
@@ -526,29 +685,33 @@ def main():
         f.write(output)
 
     print(f"Wrote {out_path}")
-    print(f"  Swift files: {len(build_files_sources)}")
-    print(f"  Resource files: {len(build_files_resources)}")
-    print(f"  Total file refs: {len(file_refs)}")
+    print(f"  App Swift files: {len(app.build_files_sources)}")
+    print(f"  App resource files: {len(app.build_files_resources)}")
+    print(f"  Test Swift files: {len(tests.build_files_sources)}")
 
-    write_scheme(target_id)
-
-    return {
-        "target_id": target_id,
-        "scheme_name": PRODUCT_NAME,
-    }
+    write_scheme(app_target_id, tests_target_id)
 
 
-def write_scheme(target_id):
+def write_scheme(app_target_id, tests_target_id):
     scheme_dir = os.path.join(PROJECT_DIR, "xcshareddata", "xcschemes")
     os.makedirs(scheme_dir, exist_ok=True)
     scheme_path = os.path.join(scheme_dir, f"{PRODUCT_NAME}.xcscheme")
 
-    buildable_reference = f'''
+    app_buildable_reference = f'''
       <BuildableReference
          BuildableIdentifier = "primary"
-         BlueprintIdentifier = "{target_id}"
+         BlueprintIdentifier = "{app_target_id}"
          BuildableName = "{PRODUCT_NAME}.app"
          BlueprintName = "{PRODUCT_NAME}"
+         ReferencedContainer = "container:{PRODUCT_NAME}.xcodeproj">
+      </BuildableReference>'''.rstrip("\n")
+
+    tests_buildable_reference = f'''
+      <BuildableReference
+         BuildableIdentifier = "primary"
+         BlueprintIdentifier = "{tests_target_id}"
+         BuildableName = "{TESTS_PRODUCT_NAME}.xctest"
+         BlueprintName = "{TESTS_PRODUCT_NAME}"
          ReferencedContainer = "container:{PRODUCT_NAME}.xcodeproj">
       </BuildableReference>'''.rstrip("\n")
 
@@ -565,7 +728,14 @@ def write_scheme(target_id):
             buildForRunning = "YES"
             buildForProfiling = "YES"
             buildForArchiving = "YES"
-            buildForAnalyzing = "YES">{buildable_reference}
+            buildForAnalyzing = "YES">{app_buildable_reference}
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "YES">{tests_buildable_reference}
          </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
@@ -575,6 +745,9 @@ def write_scheme(target_id):
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
       <Testables>
+         <TestableReference
+            skipped = "NO">{tests_buildable_reference}
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
@@ -588,7 +761,7 @@ def write_scheme(target_id):
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES">
       <BuildableProductRunnable
-         runnableDebuggingMode = "0">{buildable_reference}
+         runnableDebuggingMode = "0">{app_buildable_reference}
       </BuildableProductRunnable>
    </LaunchAction>
    <ProfileAction
@@ -598,7 +771,7 @@ def write_scheme(target_id):
       useCustomWorkingDirectory = "NO"
       debugDocumentVersioning = "YES">
       <BuildableProductRunnable
-         runnableDebuggingMode = "0">{buildable_reference}
+         runnableDebuggingMode = "0">{app_buildable_reference}
       </BuildableProductRunnable>
    </ProfileAction>
    <AnalyzeAction

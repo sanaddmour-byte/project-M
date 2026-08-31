@@ -65,17 +65,24 @@ enum FieldItemParser {
         }
 
         // Equipment: bare keyword mention, optionally with nearby hours.
-        for equipment in equipmentKeywords {
+        // Longer phrases are checked first and claim their match range so
+        // e.g. "mini excavator" doesn't also produce a second, redundant
+        // suggestion just for containing the substring "excavator".
+        var matchedEquipmentRanges: [Range<String.Index>] = []
+        for equipment in equipmentKeywords.sorted(by: { $0.count > $1.count }) {
             guard lowercased.contains(equipment) else { continue }
             let pattern = NSRegularExpression.escapedPattern(for: equipment)
             guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { continue }
             let range = NSRange(lowercased.startIndex..., in: lowercased)
-            if let match = regex.firstMatch(in: lowercased, range: range) {
-                let hours = nearestHours(in: lowercased, around: match.range) ?? 0
-                result.equipmentItems.append(
-                    ParsedEquipmentSuggestion(description: equipment.capitalized, hoursOperated: hours)
-                )
-            }
+            guard let match = regex.firstMatch(in: lowercased, range: range),
+                  let matchRange = Range(match.range, in: lowercased) else { continue }
+            guard !matchedEquipmentRanges.contains(where: { $0.overlaps(matchRange) }) else { continue }
+            matchedEquipmentRanges.append(matchRange)
+
+            let hours = nearestHours(in: lowercased, around: match.range) ?? 0
+            result.equipmentItems.append(
+                ParsedEquipmentSuggestion(description: equipment.capitalized, hoursOperated: hours)
+            )
         }
 
         // If exactly one labor item was found with no hours attached, but a
