@@ -42,6 +42,25 @@ Practical effect on how this was built:
   README badge before trusting a "no errors" claim from anywhere else in
   this document. If it's red, that supersedes every static-analysis claim
   made elsewhere in this file.
+- **Update 2:** CI's first real run found one genuine compile error —
+  `SignOnGlassView.confirmSignature()` (in `SignatureStepView.swift`)
+  called `ImageRenderer`'s `@MainActor`-isolated `init`/`.scale`/`.uiImage`
+  from a plain instance method the compiler does not infer as
+  `@MainActor`-isolated just from being declared on a `View`-conforming
+  struct (unlike an inline `Button { }` closure written directly in
+  `body`, which does inherit that isolation — this is why the two
+  `UIApplication.shared.open(...)` call sites elsewhere never tripped the
+  same error). Fixed by annotating the method `@MainActor`, exactly as the
+  compiler's own diagnostic suggested. After that one-line fix, `build`
+  and `test` (23 tests) both went green — see
+  [the passing run](https://github.com/sanaddmour-byte/project-M/actions).
+  That confirms the SwiftData models, the pricing/parsing/notice-draft
+  logic, and the project file structure are all real and correct as
+  written. It does **not** confirm the UI actually behaves correctly on
+  screen (button hit targets, camera/location permission flows, the
+  signature pad rendering right, PDF layout, etc.) — that still needs an
+  actual person tapping through the Simulator, which no amount of CI or
+  static review substitutes for.
 
 ## 1. Project identity
 
