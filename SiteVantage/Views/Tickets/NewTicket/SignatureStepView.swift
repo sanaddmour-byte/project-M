@@ -189,6 +189,7 @@ private struct SignOnGlassView: View {
         }
     }
 
+    @MainActor
     private func confirmSignature() {
         guard !signerName.trimmingCharacters(in: .whitespaces).isEmpty else {
             errorMessage = "Enter the signer's name."

@@ -1,5 +1,7 @@
 # SiteVantage
 
+[![iOS Build & Test](https://github.com/sanaddmour-byte/project-M/actions/workflows/ci.yml/badge.svg)](https://github.com/sanaddmour-byte/project-M/actions/workflows/ci.yml)
+
 A native iOS field-capture app for construction trade foremen to document
 Time & Material (T&M) tickets — extra work directed verbally by a GC — in
 under 90 seconds, fully offline, with evidence (photos burned with
@@ -31,6 +33,20 @@ or open `SiteVantage.xcodeproj` in Xcode and run on an iPhone 15 (or
 similar) simulator. **This has not been run — do this first** before
 relying on anything else here. If it doesn't build cleanly, that is
 expected risk called out in `DECISIONS.md` §0, not a surprise.
+
+### Unit tests
+
+There's a `SiteVantageTests` target covering the pure-logic pieces —
+`PricingCalculator`, `FieldItemParser`, `TicketSerialGenerator`,
+`NoticeDraftGenerator` — against an in-memory SwiftData store:
+
+```
+xcodebuild test -scheme SiteVantage -destination 'platform=iOS Simulator,name=iPhone 15'
+```
+
+This is the one part of the acceptance checklist you can get real
+pass/fail signal on without touching the UI — worth running before the
+simulator UI pass.
 
 ### If you add/remove/rename source files
 
