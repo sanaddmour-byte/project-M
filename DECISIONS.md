@@ -35,6 +35,13 @@ Practical effect on how this was built:
   xcodebuild build -scheme SiteVantage -destination 'platform=iOS Simulator,name=iPhone 15'
   ```
   as the very first step, before trusting anything else in this list.
+- **Update:** a GitHub Actions workflow (`.github/workflows/ci.yml`) now
+  runs `xcodebuild build` and `xcodebuild test` on a `macos-14` runner
+  (Xcode 15.4 pinned) on every push and PR. This is the first actual
+  compiler this project has ever seen — check the Actions tab / the
+  README badge before trusting a "no errors" claim from anywhere else in
+  this document. If it's red, that supersedes every static-analysis claim
+  made elsewhere in this file.
 
 ## 1. Project identity
 

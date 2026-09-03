@@ -1,5 +1,7 @@
 # SiteVantage
 
+[![iOS Build & Test](https://github.com/sanaddmour-byte/project-M/actions/workflows/ci.yml/badge.svg)](https://github.com/sanaddmour-byte/project-M/actions/workflows/ci.yml)
+
 A native iOS field-capture app for construction trade foremen to document
 Time & Material (T&M) tickets — extra work directed verbally by a GC — in
 under 90 seconds, fully offline, with evidence (photos burned with
