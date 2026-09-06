@@ -189,26 +189,25 @@ struct TicketDetailView: View {
     }
 
     private func exportPDF() {
+        // Runs on the main thread deliberately: FieldTicket/Project are
+        // SwiftData models, which are not Sendable, so reading them from a
+        // background queue is a real (if often-tolerated) data-race risk.
+        // Generating one ticket's PDF from a handful of already-decoded
+        // JPEGs is well within "local disk I/O" fast-path territory per
+        // spec §6, so there's no need to hop threads for it.
         isGeneratingPDF = true
-        guard let project = ticket.project else {
-            isGeneratingPDF = false
-            return
-        }
-        DispatchQueue.global(qos: .userInitiated).async {
-            let data = PDFGenerator.generate(ticket: ticket, project: project)
-            let fileName = "\(ticket.ticketSerial).pdf"
-            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
-            do {
-                try data.write(to: tempURL, options: .atomic)
-                DispatchQueue.main.async {
-                    self.shareURL = IdentifiableURL(url: tempURL)
-                    self.isGeneratingPDF = false
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.isGeneratingPDF = false
-                }
-            }
+        defer { isGeneratingPDF = false }
+        guard let project = ticket.project else { return }
+
+        let data = PDFGenerator.generate(ticket: ticket, project: project)
+        let fileName = "\(ticket.ticketSerial).pdf"
+        let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
+        do {
+            try data.write(to: tempURL, options: .atomic)
+            shareURL = IdentifiableURL(url: tempURL)
+        } catch {
+            // Nothing more actionable to do here; the share sheet simply
+            // won't open. isGeneratingPDF is already reset via `defer`.
         }
     }
 }

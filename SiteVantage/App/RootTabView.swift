@@ -7,15 +7,15 @@ import SwiftUI
 import SwiftData
 
 struct RootTabView: View {
-    @Environment(\.modelContext) private var modelContext
     @Query private var settingsRows: [AppSettings]
     @Query(sort: \Project.name) private var projects: [Project]
 
+    // SiteVantageApp.init() bootstraps the single AppSettings row before
+    // any view body runs, so this is always non-nil in practice. The
+    // fallback is a transient, never-inserted default so a render never
+    // crashes even if that invariant is ever broken.
     private var settings: AppSettings {
-        if let existing = settingsRows.first {
-            return existing
-        }
-        return AppSettings.fetchOrCreate(in: modelContext)
+        settingsRows.first ?? AppSettings()
     }
 
     private var activeProject: Project? {
@@ -44,10 +44,5 @@ struct RootTabView: View {
         }
         .tint(FieldPalette.accent(highContrast: settings.highContrastModeEnabled))
         .preferredColorScheme(settings.highContrastModeEnabled ? .dark : nil)
-        .onAppear {
-            if settingsRows.isEmpty {
-                _ = AppSettings.fetchOrCreate(in: modelContext)
-            }
-        }
     }
 }

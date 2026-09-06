@@ -14,9 +14,23 @@
             buildForAnalyzing = "YES">
       <BuildableReference
          BuildableIdentifier = "primary"
-         BlueprintIdentifier = "6E257C335B1785E7411CCBBB"
+         BlueprintIdentifier = "5D9C1DBB2A7475B4D016EEAA"
          BuildableName = "SiteVantage.app"
          BlueprintName = "SiteVantage"
+         ReferencedContainer = "container:SiteVantage.xcodeproj">
+      </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
+            buildForAnalyzing = "YES">
+      <BuildableReference
+         BuildableIdentifier = "primary"
+         BlueprintIdentifier = "C4290E0750D70C477EB60FAF"
+         BuildableName = "SiteVantageTests.xctest"
+         BlueprintName = "SiteVantageTests"
          ReferencedContainer = "container:SiteVantage.xcodeproj">
       </BuildableReference>
          </BuildActionEntry>
@@ -28,6 +42,16 @@
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       shouldUseLaunchSchemeArgsEnv = "YES">
       <Testables>
+         <TestableReference
+            skipped = "NO">
+      <BuildableReference
+         BuildableIdentifier = "primary"
+         BlueprintIdentifier = "C4290E0750D70C477EB60FAF"
+         BuildableName = "SiteVantageTests.xctest"
+         BlueprintName = "SiteVantageTests"
+         ReferencedContainer = "container:SiteVantage.xcodeproj">
+      </BuildableReference>
+         </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
@@ -44,7 +68,7 @@
          runnableDebuggingMode = "0">
       <BuildableReference
          BuildableIdentifier = "primary"
-         BlueprintIdentifier = "6E257C335B1785E7411CCBBB"
+         BlueprintIdentifier = "5D9C1DBB2A7475B4D016EEAA"
          BuildableName = "SiteVantage.app"
          BlueprintName = "SiteVantage"
          ReferencedContainer = "container:SiteVantage.xcodeproj">
@@ -61,7 +85,7 @@
          runnableDebuggingMode = "0">
       <BuildableReference
          BuildableIdentifier = "primary"
-         BlueprintIdentifier = "6E257C335B1785E7411CCBBB"
+         BlueprintIdentifier = "5D9C1DBB2A7475B4D016EEAA"
          BuildableName = "SiteVantage.app"
          BlueprintName = "SiteVantage"
          ReferencedContainer = "container:SiteVantage.xcodeproj">

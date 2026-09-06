@@ -19,6 +19,23 @@ struct VoiceCaptureStepView: View {
     @State private var permissionState: PermissionState = .unknown
     @State private var editableText: String = ""
 
+    /// DragGesture(minimumDistance: 0) rather than onLongPressGesture: it
+    /// fires reliably on touch-down/touch-up (including release outside the
+    /// button's bounds) with no minimum-duration edge cases, which matters
+    /// for a push-to-talk control that must never get "stuck" recording.
+    private var pushToTalkGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { _ in
+                guard !isPressing else { return }
+                isPressing = true
+                handlePressing(true)
+            }
+            .onEnded { _ in
+                isPressing = false
+                handlePressing(false)
+            }
+    }
+
     enum PermissionState {
         case unknown, authorized, denied
     }
@@ -39,10 +56,8 @@ struct VoiceCaptureStepView: View {
                     .padding(.horizontal, 32)
 
                 PushToTalkButton(isRecording: speechService.isRecording)
-                    .onLongPressGesture(minimumDuration: 0, maximumDistance: .infinity, pressing: { pressing in
-                        handlePressing(pressing)
-                    }, perform: {})
                     .fieldTapTarget()
+                    .gesture(pushToTalkGesture)
 
                 Text(speechService.isRecording ? "Recording\u{2026} release to stop" : "Press and hold to describe the extra work")
                     .font(.subheadline)

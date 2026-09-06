@@ -13,8 +13,10 @@ struct ProjectListView: View {
 
     @State private var showingNewProject = false
 
+    // See RootTabView: the single AppSettings row is bootstrapped at app
+    // launch, so this never needs to insert one during a view render.
     private var settings: AppSettings {
-        settingsRows.first ?? AppSettings.fetchOrCreate(in: modelContext)
+        settingsRows.first ?? AppSettings()
     }
 
     var body: some View {
